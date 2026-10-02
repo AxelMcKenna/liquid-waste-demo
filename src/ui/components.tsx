@@ -196,27 +196,44 @@ export function Dialog({ title, onClose, children, footer }: { title: string; on
 }
 
 /** Blocks in-app navigation (including closing URL-driven drawers) while `dirty`. */
-export function UnsavedGuard({ dirty }: { dirty: boolean }) {
+export function UnsavedGuard({ dirty, onSave }: { dirty: boolean; onSave?: () => Promise<boolean> }) {
   const blocker = useBlocker(({ currentLocation, nextLocation }) => dirty && currentLocation.pathname + currentLocation.search !== nextLocation.pathname + nextLocation.search);
+  const [saving, setSaving] = useState(false);
+  const [retry, setRetry] = useState(0);
   useEffect(() => {
     if (!dirty) return;
-    const onUnload = (e: BeforeUnloadEvent) => e.preventDefault();
+    const onUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
     window.addEventListener('beforeunload', onUnload);
     return () => window.removeEventListener('beforeunload', onUnload);
   }, [dirty]);
+  useEffect(() => {
+    if (blocker.state !== 'blocked' || !onSave) return;
+    let active = true;
+    setSaving(true);
+    onSave().then((saved) => {
+      if (!active) return;
+      setSaving(false);
+      if (saved) blocker.proceed();
+    }, () => { if (active) setSaving(false); });
+    return () => { active = false; };
+  }, [blocker, onSave, retry]);
   if (blocker.state !== 'blocked') return null;
   return (
     <Dialog
-      title="Discard unsaved changes?"
+      title={onSave ? (saving ? 'Saving draft…' : 'Draft not saved') : 'Discard unsaved changes?'}
       onClose={() => blocker.reset()}
       footer={
         <>
           <Button onClick={() => blocker.reset()} data-autofocus>Keep editing</Button>
-          <Button variant="destructive" onClick={() => blocker.proceed()}>Discard changes</Button>
+          {onSave && <Button variant="primary" pending={saving} onClick={() => setRetry((value) => value + 1)}>Retry save and leave</Button>}
+          <Button variant="destructive" disabled={saving} onClick={() => blocker.proceed()}>Discard changes</Button>
         </>
       }
     >
-      <p>You have edits that haven't been saved on this device.</p>
+      <p>{onSave ? 'Your entries stay here until they are saved, or you choose to discard them.' : "You have edits that haven't been saved on this device."}</p>
     </Dialog>
   );
 }

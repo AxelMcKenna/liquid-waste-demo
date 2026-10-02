@@ -1,5 +1,5 @@
 import { createFixtures, DEMO_DATE, FIXTURE_VERSION } from '../domain/fixtures';
-import { applyCommand, type Clock, type Command, type CommandResult } from '../domain/logic';
+import { applyCommand, DomainError, type Clock, type Command, type CommandResult } from '../domain/logic';
 import type { DemoState } from '../domain/types';
 import type { StorageAdapter } from './storage';
 
@@ -18,8 +18,9 @@ export class SaveError extends Error {
 }
 
 /**
- * Single typed domain store. Commands run one at a time; state only changes
- * after storage confirms the write. A repeated mutationId is a no-op.
+ * Commands are applied to the latest persisted state inside a single transaction.
+ * This instance updates only after storage confirms the write; mutation IDs are
+ * checked transactionally across instances. Reset uses the same local queue.
  */
 export class DemoStore {
   state!: DemoState;
@@ -29,15 +30,11 @@ export class DemoStore {
   constructor(private storage: StorageAdapter, private clock: Clock = demoClock) {}
 
   async init() {
-    const saved = await this.storage.load();
-    if (saved && saved.version === FIXTURE_VERSION) {
-      this.state = saved;
-    } else {
-      const fresh = createFixtures();
-      await this.storage.clear();
-      await this.storage.commit(fresh, [], []);
-      this.state = fresh;
-    }
+    this.state = await this.storage.commit((saved) =>
+      saved?.version === FIXTURE_VERSION
+        ? { state: saved }
+        : { state: createFixtures(), clearBlobs: true },
+    );
     this.emit();
   }
 
@@ -52,32 +49,41 @@ export class DemoStore {
     this.listeners.forEach((fn) => fn());
   }
 
-  dispatch(cmd: Command, mutationId?: string): Promise<CommandResult | undefined> {
-    const run = async () => {
-      if (mutationId && this.state.appliedMutations[mutationId]) return undefined;
-      const result = applyCommand(this.state, cmd, this.clock);
-      if (mutationId) result.state.appliedMutations[mutationId] = true;
-      try {
-        await this.storage.commit(result.state, result.putBlobs, result.deleteBlobs);
-      } catch {
-        throw new SaveError();
-      }
-      this.state = result.state;
-      this.emit();
-      return result;
-    };
-    const p = this.queue.then(run, run);
-    this.queue = p.catch(() => undefined);
-    return p;
+  private enqueue<T>(run: () => Promise<T>): Promise<T> {
+    const promise = this.queue.then(run, run);
+    this.queue = promise.catch(() => undefined);
+    return promise;
   }
 
-  async reset() {
-    await this.queue;
-    const fresh = createFixtures();
-    await this.storage.clear();
-    await this.storage.commit(fresh, [], []);
-    this.state = fresh;
-    this.emit();
+  dispatch(cmd: Command, mutationId?: string): Promise<CommandResult | undefined> {
+    return this.enqueue(async () => {
+      let result: CommandResult | undefined;
+      try {
+        this.state = await this.storage.commit((current) => {
+          if (!current || current.version !== FIXTURE_VERSION) {
+            throw new DomainError('Demo data changed. Reload this page before continuing.');
+          }
+          if (mutationId && current.appliedMutations[mutationId]) return { state: current };
+          result = applyCommand(current, cmd, this.clock);
+          if (mutationId) result.state.appliedMutations[mutationId] = true;
+          return result;
+        });
+      } catch (error) {
+        if (error instanceof DomainError) throw error;
+        throw new SaveError();
+      }
+      this.emit();
+      return result;
+    });
+  }
+
+  reset(): Promise<void> {
+    return this.enqueue(async () => {
+      const fresh = createFixtures();
+      // Replacing state and removing uploaded blobs is one all-or-nothing transaction.
+      this.state = await this.storage.commit(() => ({ state: fresh, clearBlobs: true }));
+      this.emit();
+    });
   }
 
   getBlob(id: string) {

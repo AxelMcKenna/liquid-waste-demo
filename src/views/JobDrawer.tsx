@@ -1,5 +1,5 @@
 import { Ban, ClipboardCheck, FileText, Play, RotateCcw, Save, Trash2, Truck as TruckIcon, Upload, Image as ImageIcon, ArrowLeft, Check, X } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { SAMPLE_PHOTOS } from '../domain/fixtures';
 import {
@@ -7,7 +7,7 @@ import {
   STATUS_LABEL, validateCollection, validatePhotoFile, PHOTO_TYPES, type CollectionInput, type FieldErrors,
 } from '../domain/logic';
 import type { DemoState, Job } from '../domain/types';
-import { useCommand, useDemo } from '../store/context';
+import { useCommand, useDemo, useStore } from '../store/context';
 import {
   BILLING_ICON, BILLING_TONE, Button, Chip, Drawer, ErrorSummary, Field, JOB_ICON, JOB_TONE, Meta, Notice, PhotoThumb, UnsavedGuard,
 } from '../ui/components';
@@ -261,16 +261,38 @@ function CollectionForm({ job, state, mode, setMode, onClose, title, subtitle }:
   const truck = state.trucks[job.truckId!];
   const remaining = remainingCapacity(state, truck.id);
 
-  // Autosave the draft shortly after edits; only reports "saved" after storage succeeds.
-  const base = saved ?? { litres: '', extraWork: false, extraDescription: '', extraMinutes: '', notes: '' };
-  const dirty = form.litres !== base.litres || form.extraWork !== base.extraWork || form.extraDescription !== base.extraDescription || form.extraMinutes !== base.extraMinutes || form.notes !== base.notes;
+  const store = useStore();
+  const saveDraftCommand = draftCmd.run;
   const formRef = useRef(form);
   formRef.current = form;
+  const saving = useRef<Promise<boolean> | null>(null);
+  const matches = (draft: typeof saved, entry: typeof form) =>
+    entry.litres === (draft?.litres ?? '') && entry.extraWork === (draft?.extraWork ?? false) &&
+    entry.extraDescription === (draft?.extraDescription ?? '') && entry.extraMinutes === (draft?.extraMinutes ?? '') &&
+    entry.notes === (draft?.notes ?? '');
+  const dirty = !matches(saved, form);
+
+  // All exits share the same save, and edits made during a slow write are saved next.
+  // A failure leaves the input intact; only a deliberate retry or new edit retries it.
+  const saveDraft = useCallback((): Promise<boolean> => {
+    if (saving.current) return saving.current;
+    const flush = async () => {
+      while (!matches(store.state.drafts[job.id], formRef.current)) {
+        const result = await saveDraftCommand({ type: 'saveDraft', jobId: job.id, draft: { ...formRef.current, photoIds: [] } });
+        if (result === null) return false;
+      }
+      return true;
+    };
+    const promise = flush().finally(() => { saving.current = null; });
+    saving.current = promise;
+    return promise;
+  }, [job.id, store, saveDraftCommand]);
+
   useEffect(() => {
     if (!dirty || mode !== 'collect') return;
-    const t = setTimeout(() => draftCmd.run({ type: 'saveDraft', jobId: job.id, draft: { ...formRef.current, photoIds: [] } }), 700);
-    return () => clearTimeout(t);
-  }, [form, dirty, mode, job.id, draftCmd]);
+    const timer = setTimeout(() => { void saveDraft(); }, 700);
+    return () => clearTimeout(timer);
+  }, [form, dirty, mode, saveDraft]);
 
   const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => setForm((f) => ({ ...f, [k]: v }));
   const input: CollectionInput = { ...form, photoIds };
@@ -295,7 +317,7 @@ function CollectionForm({ job, state, mode, setMode, onClose, title, subtitle }:
     photoCmd.run({ type: 'addPhoto', jobId: job.id, photo: { stage, source: 'sample', name: `Built-in sample ${stage} photo`, mime: 'image/svg+xml', sampleUrl: SAMPLE_PHOTOS[stage] } });
   };
 
-  const review = () => {
+  const review = async () => {
     const e = validateCollection(state, job.id, input);
     setErrors(e);
     if (Object.keys(e).length) {
@@ -303,6 +325,7 @@ function CollectionForm({ job, state, mode, setMode, onClose, title, subtitle }:
       return;
     }
     setSummary(null);
+    if (!await saveDraft()) return;
     mutationKey.current ??= `collect:${job.id}:${crypto.randomUUID()}`;
     setMode('review');
   };
@@ -317,7 +340,7 @@ function CollectionForm({ job, state, mode, setMode, onClose, title, subtitle }:
 
   if (mode === 'review') {
     return (
-      <Drawer title={title} subtitle={subtitle} onClose={onClose}
+      <Drawer title={title} subtitle={subtitle} onClose={() => { if (!submitCmd.pending) onClose(); }}
         footer={
           <div className="footer-actions">
             {submitCmd.error && <p className="field-error footer-error" role="alert">{submitCmd.error}</p>}
@@ -325,6 +348,7 @@ function CollectionForm({ job, state, mode, setMode, onClose, title, subtitle }:
             <Button variant="primary" size="lg" icon={Check} pending={submitCmd.pending} onClick={confirm}>Confirm collection</Button>
           </div>
         }>
+        <UnsavedGuard dirty={dirty} onSave={saveDraft} />
         <h3 className="section-title">Review collection</h3>
         <p className="muted">Confirming adds this volume to {truck.name}'s open load and can't be edited afterwards.</p>
         <dl className="review-list">
@@ -342,12 +366,13 @@ function CollectionForm({ job, state, mode, setMode, onClose, title, subtitle }:
     <Drawer title={title} subtitle={subtitle} onClose={onClose}
       footer={
         <div className="footer-actions">
-          <Button icon={Ban} onClick={() => setMode('block')}>Can't complete</Button>
-          <Button icon={Save} pending={draftCmd.pending} onClick={() => draftCmd.run({ type: 'saveDraft', jobId: job.id, draft: { ...form, photoIds: [] } })}>Save draft</Button>
-          <Button variant="primary" size="lg" icon={ClipboardCheck} onClick={review}>Review collection</Button>
+          <Button icon={Ban} disabled={draftCmd.pending} onClick={async () => { if (await saveDraft()) setMode('block'); }}>Can't complete</Button>
+          <Button icon={Save} pending={draftCmd.pending} onClick={saveDraft}>Save draft</Button>
+          <Button variant="primary" size="lg" icon={ClipboardCheck} disabled={draftCmd.pending || photoCmd.pending} onClick={review}>Review collection</Button>
         </div>
       }>
-      <form className="stack-20" onSubmit={(e) => { e.preventDefault(); review(); }} noValidate>
+      <UnsavedGuard dirty={dirty} onSave={saveDraft} />
+      <form className="stack-20" onSubmit={(e) => { e.preventDefault(); void review(); }} noValidate>
         <ErrorSummary message={summary ?? draftCmd.error} errors={summary ? (errors as Record<string, string>) : undefined} />
         <p className="draft-state" aria-live="polite">
           {draftCmd.error ? 'Draft not saved.' : dirty ? 'Saving draft on this device…' : savedAt ? `Draft saved on this device at ${formatTime(savedAt)}` : 'Draft not saved yet'}

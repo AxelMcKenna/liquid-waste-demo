@@ -393,7 +393,12 @@ function InvoiceSheet({ draft, state }: { draft: InvoiceDraft; state: DemoState 
   const [form, setForm] = useState(initial);
   const cmd = useCommand();
   const navigate = useNavigate();
-  const dirty = JSON.stringify(form) !== JSON.stringify(initial);
+  // Compare persisted values, not formatting (e.g. 200 and 200.00 are the same rate).
+  // Keep local inputs untouched so a completed save cannot erase newer typing.
+  const dirty = parsePercent(form.tax) !== draft.taxBasisPoints || form.lines.some((line, index) => {
+    const saved = draft.lines[index];
+    return line.id !== saved.id || line.description.trim() !== saved.description || parseRate(line.rate) !== saved.unitRate;
+  });
 
   const rateErrors = form.lines.map((l) => (parseRate(l.rate) === null ? 'Enter a rate like 0.12 (up to 4 decimals).' : null));
   const descErrors = form.lines.map((l) => (l.description.trim() ? null : 'Enter a description.'));

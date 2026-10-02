@@ -9,11 +9,8 @@ const BASE = `http://localhost:${PORT}`;
 const SHOTS = 'screenshots';
 mkdirSync(SHOTS, { recursive: true });
 
-const server = spawn('npx', ['vite', 'preview', '--port', String(PORT), '--strictPort'], { stdio: 'pipe' });
-await new Promise((resolve, reject) => {
-  server.stdout.on('data', (d) => String(d).includes(String(PORT)) && resolve());
-  server.on('exit', () => reject(new Error('preview server exited')));
-});
+let server;
+let browser;
 
 const results = [];
 const check = (name, ok, detail = '') => {
@@ -27,7 +24,6 @@ const until = async (fn, ms = 3000) => {
   return false;
 };
 
-const browser = await chromium.launch();
 const consoleErrors = [];
 const watch = (page) => {
   page.on('pageerror', (e) => consoleErrors.push(`pageerror: ${e.message}`));
@@ -35,6 +31,27 @@ const watch = (page) => {
 };
 
 try {
+  server = spawn(process.execPath, ['node_modules/vite/bin/vite.js', 'preview', '--port', String(PORT), '--strictPort'], { stdio: 'pipe' });
+  await new Promise((resolve, reject) => {
+    let stderr = '';
+    const timeout = setTimeout(() => finish(new Error(`Preview did not start within 15 seconds. ${stderr}`)), 15_000);
+    const onData = (data) => { if (String(data).includes(`http://localhost:${PORT}`)) finish(); };
+    const onError = (error) => finish(error);
+    const onExit = (code) => finish(new Error(`Preview exited (${code}). ${stderr}`));
+    function finish(error) {
+      clearTimeout(timeout);
+      server.stdout.off('data', onData);
+      server.off('error', onError);
+      server.off('exit', onExit);
+      if (error) reject(error); else resolve();
+    }
+    server.stderr.on('data', (data) => { stderr += String(data); });
+    server.stdout.on('data', onData);
+    server.once('error', onError);
+    server.once('exit', onExit);
+  });
+  browser = await chromium.launch();
+
   /* ---------- Desktop walkthrough ---------- */
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const page = await ctx.newPage();
@@ -237,6 +254,7 @@ try {
   await mp.locator('.photo-item').first().waitFor();
   await mp.screenshot({ path: `${SHOTS}/driver-form-390.png` });
   await mp.getByRole('button', { name: 'Review collection' }).tap();
+  await mp.getByRole('button', { name: 'Confirm collection' }).waitFor();
   await mp.screenshot({ path: `${SHOTS}/driver-review-390.png` });
   await mp.getByRole('button', { name: 'Confirm collection' }).tap();
   await mp.getByText('Collection confirmed. No further driver action.').waitFor();
@@ -254,8 +272,8 @@ try {
   check('Script completed without exception', false, e.message.split('\n')[0]);
 } finally {
   check('No uncaught console errors', consoleErrors.length === 0, consoleErrors.slice(0, 3).join(' | '));
-  await browser.close();
-  server.kill();
+  await browser?.close().catch((error) => check('Browser cleanup', false, error.message));
+  server?.kill();
   const failed = results.filter((r) => !r.ok);
   writeFileSync(`${SHOTS}/browser-results.json`, JSON.stringify(results, null, 2));
   console.log(`\n${results.length - failed.length}/${results.length} browser checks passed`);

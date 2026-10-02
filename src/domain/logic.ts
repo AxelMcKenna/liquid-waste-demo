@@ -76,7 +76,7 @@ export function billingInfo(s: DemoState, jobId: string): { status: BillingStatu
   if (job.status === 'blocked') return { status: 'not_ready', blockers: ['Visit blocked: nothing was collected'] };
   if (job.status !== 'collected' || !job.collection) return { status: 'not_ready', blockers: ['Not collected yet'] };
   const blockers: string[] = [];
-  if (job.collection.photoIds.length === 0) blockers.push('Missing collection photo evidence');
+  if (job.collection.photoIds.length === 0 || job.collection.photoIds.some((id) => s.photos[id]?.jobId !== job.id)) blockers.push('Missing collection photo evidence');
   const load = job.loadId ? s.loads[job.loadId] : undefined;
   if (!load || load.status !== 'reconciled') {
     const ds = load ? disposalStatus(s, load) : 'missing';
@@ -178,6 +178,9 @@ export function validateCollection(s: DemoState, jobId: string, input: Collectio
   }
   if (input.photoIds.length === 0) errors.photos = 'Add at least one photo.';
   else if (input.photoIds.length > MAX_PHOTOS) errors.photos = `Use no more than ${MAX_PHOTOS} photos.`;
+  else if (new Set(input.photoIds).size !== input.photoIds.length || input.photoIds.some((id) =>
+    s.photos[id]?.jobId !== jobId || !s.drafts[jobId]?.photoIds.includes(id),
+  )) errors.photos = 'Photo evidence changed. Check the photos and review this collection again.';
   if (input.extraWork) {
     if (!input.extraDescription.trim()) errors.extraDescription = 'Describe the additional work.';
     const minutes = parseWholeNumber(input.extraMinutes);
