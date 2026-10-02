@@ -59,7 +59,7 @@ try {
   await page.getByRole('button', { name: 'Assign J108' }).click();
   await page.getByRole('radio', { name: /T01/ }).check();
   await page.getByRole('dialog').getByRole('button', { name: 'Assign', exact: true }).click();
-  check('Septic job rejected on grease truck', await page.getByRole('alert').filter({ hasText: 'grease waste only' }).isVisible());
+  check('Septic job rejected on grease truck', await until(() => page.getByRole('alert').filter({ hasText: 'grease waste only' }).isVisible()));
   await page.keyboard.press('Escape');
   check('Escape closes dialog', (await page.getByRole('dialog').count()) === 0);
   check('Focus returns to opener after Escape', await until(() => page.evaluate(() => document.activeElement?.getAttribute('aria-label') === 'Assign J108')));

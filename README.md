@@ -68,11 +68,11 @@ Rates are stored in 1/10,000 NZD and amounts in integer cents, rounded half up. 
 
 ## Readiness verification (2 Oct 2026)
 
-**Current branch: `npm test`, 41/41 passed. `npm run build` (TypeScript + production build), passed on Node 24.19.0.** The original 21 domain/persistence checks remain, plus regressions covering:
+**Current branch: `npm test`, 42/42 passed. `npm run build` (TypeScript + production build), passed on Node 24.19.0.** The original 21 domain/persistence checks remain, plus regressions covering:
 
 - HTTP preview readiness with coloured/chunked logs, startup errors, non-success responses and timeouts
 - separate store instances writing concurrently to one database without losing unrelated changes
-- cross-tab idempotency and stale command validation
+- cross-tab idempotency, stale command validation and asynchronous incompatible-truck errors
 - collection photo evidence removed by another tab
 - failed atomic writes/reset preserving stored state and photo blobs
 - reset serialized with immediately following commands
@@ -83,7 +83,7 @@ Rates are stored in 1/10,000 NZD and amounts in integer cents, rounded half up. 
 - normalized invoice rate/tax/description saves clearing the unsaved flag
 - failed invoice saves and newer typing during an earlier save
 
-Component regressions use jsdom, not a real rendering engine. The browser suite has **not been rerun for this branch** in the restricted local-socket environment. GitHub Actions is configured to run clean install, tests, build and the Chromium acceptance suite on pushes and pull requests, without secrets or deployment. Its result must pass before the branch is called browser-verified.
+Component regressions use jsdom, not a real rendering engine. Local socket restrictions prevent a Chromium run in the editing environment. GitHub Actions runs clean install, tests, build and all 82 Chromium acceptance checks on pushes and pull requests, without secrets or deployment. Check the current commit’s CI result before calling it browser-verified.
 
 ### Historical baseline browser report (original prototype, before these fixes)
 

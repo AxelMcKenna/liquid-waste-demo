@@ -9,6 +9,7 @@ import { DemoStore } from '../store/store';
 import { createIdbStorage, type StorageAdapter } from '../store/storage';
 import { JobDrawer } from './JobDrawer';
 import { OfficeView } from './Office';
+import { DispatchView } from './Dispatch';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 const clock = { now: () => '2026-10-02T10:15:00+13:00' };
@@ -191,5 +192,22 @@ describe('invoice edit persistence', () => {
     await click('Save draft changes');
     await settle(() => expect(button('Save draft changes').disabled).toBe(true));
     expect((await f.storage.load())!.invoices.D107.lines[0].unitRate).toBe(2_100_000);
+  });
+});
+
+describe('transactional assignment feedback', () => {
+  it('shows an incompatible-truck error after async validation without changing the job', async () => {
+    const { store, storage } = await fixture(false);
+    await mount(store, '/dispatch', DispatchView);
+    await click('Assign J108');
+    const radio = document.querySelector<HTMLInputElement>('input[type="radio"][value="T01"]')!;
+    expect(radio).toBeTruthy();
+    await act(async () => radio.click());
+    const assign = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')).find((element) => element.textContent?.trim() === 'Assign')!;
+    await act(async () => assign.click());
+    await settle(() => expect(document.querySelector('[role="alert"]')?.textContent).toContain('grease waste only'));
+    expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+    expect((await storage.load())!.jobs.J108.status).toBe('unassigned');
+    expect(store.state.jobs.J108.truckId).toBeUndefined();
   });
 });
