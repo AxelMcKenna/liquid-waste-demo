@@ -68,8 +68,9 @@ Rates are stored in 1/10,000 NZD and amounts in integer cents, rounded half up. 
 
 ## Readiness verification (2 Oct 2026)
 
-**Current branch: `npm test`, 37/37 passed. `npm run build` (TypeScript + production build), passed on Node 24.19.0.** The original 21 domain/persistence checks remain, plus regressions covering:
+**Current branch: `npm test`, 41/41 passed. `npm run build` (TypeScript + production build), passed on Node 24.19.0.** The original 21 domain/persistence checks remain, plus regressions covering:
 
+- HTTP preview readiness with coloured/chunked logs, startup errors, non-success responses and timeouts
 - separate store instances writing concurrently to one database without losing unrelated changes
 - cross-tab idempotency and stale command validation
 - collection photo evidence removed by another tab

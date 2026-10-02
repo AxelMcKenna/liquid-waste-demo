@@ -3,6 +3,7 @@
 import { spawn } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { chromium } from 'playwright';
+import { waitForPreview } from './preview-server.mjs';
 
 const PORT = 4179;
 const BASE = `http://localhost:${PORT}`;
@@ -32,24 +33,7 @@ const watch = (page) => {
 
 try {
   server = spawn(process.execPath, ['node_modules/vite/bin/vite.js', 'preview', '--port', String(PORT), '--strictPort'], { stdio: 'pipe' });
-  await new Promise((resolve, reject) => {
-    let stderr = '';
-    const timeout = setTimeout(() => finish(new Error(`Preview did not start within 15 seconds. ${stderr}`)), 15_000);
-    const onData = (data) => { if (String(data).includes(`http://localhost:${PORT}`)) finish(); };
-    const onError = (error) => finish(error);
-    const onExit = (code) => finish(new Error(`Preview exited (${code}). ${stderr}`));
-    function finish(error) {
-      clearTimeout(timeout);
-      server.stdout.off('data', onData);
-      server.off('error', onError);
-      server.off('exit', onExit);
-      if (error) reject(error); else resolve();
-    }
-    server.stderr.on('data', (data) => { stderr += String(data); });
-    server.stdout.on('data', onData);
-    server.once('error', onError);
-    server.once('exit', onExit);
-  });
+  await waitForPreview(server, BASE);
   browser = await chromium.launch();
 
   /* ---------- Desktop walkthrough ---------- */
