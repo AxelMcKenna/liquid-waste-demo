@@ -353,6 +353,7 @@ input.sr-only:focus-visible + .file-label { outline: 2px solid var(--focus); out
 .span-2 { grid-column: 1 / -1; }
 .subtle-box { background: var(--surface-subtle); padding: var(--s16); border-radius: var(--r-control); }
 
+.invoice { container-type: inline-size; }
 .invoice-head { display: flex; justify-content: space-between; gap: var(--s16); align-items: flex-start; }
 .table-scroll { overflow-x: auto; }
 .invoice-table td { vertical-align: top; }
@@ -360,6 +361,17 @@ input.sr-only:focus-visible + .file-label { outline: 2px solid var(--focus); out
 .num-input { text-align: right; max-width: 120px; }
 .num-input.short { max-width: 88px; }
 .rate-input { display: inline-flex; gap: var(--s8); align-items: center; }
+.rate-input .num-input { flex-shrink: 0; min-width: calc(11ch + 26px); }
+.rate-input > .sub { white-space: nowrap; }
+/* Stack only the invoice lines when a side-by-side office pane is too narrow. */
+@container (max-width: 640px) {
+  .invoice-table, .invoice-table tbody, .invoice-table tr, .invoice-table td { display: block; width: 100%; }
+  .invoice-table thead { display: none; }
+  .invoice-table tr { padding: var(--s12) 0; border-bottom: 1px solid var(--border); }
+  .invoice-table td { padding: var(--s4) 0; border: 0; text-align: left; }
+  .invoice-table td:first-child { width: 100%; min-width: 0; }
+  .invoice-table td::before { content: attr(data-label); display: block; font-size: 12px; line-height: 16px; color: var(--text-muted); }
+}
 .invoice-totals { display: grid; gap: var(--s8); margin-left: auto; width: min(360px, 100%); }
 .invoice-totals > div { display: flex; justify-content: space-between; align-items: center; gap: var(--s16); }
 .invoice-totals dt { color: var(--text-muted); }

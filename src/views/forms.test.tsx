@@ -211,3 +211,41 @@ describe('transactional assignment feedback', () => {
     expect(store.state.jobs.J108.truckId).toBeUndefined();
   });
 });
+
+describe('URL-driven dispatch search', () => {
+  it('filters after the router update and restores all jobs when cleared', async () => {
+    const { store } = await fixture(false);
+    const router = await mount(store, '/dispatch', DispatchView);
+    await input('input[type="search"]', 'Ridge');
+    await settle(() => {
+      expect(router.state.location.search).toBe('?q=Ridge');
+      const rows = document.querySelectorAll('.jobs-table tbody tr');
+      expect(rows).toHaveLength(1);
+      expect(rows[0].textContent).toContain('Ridge');
+    });
+    await click('Clear filters');
+    await settle(() => {
+      expect(router.state.location.search).toBe('');
+      expect(document.querySelectorAll('.jobs-table tbody tr')).toHaveLength(8);
+    });
+  });
+});
+
+describe('truck run load summary', () => {
+  it('shows unreconciled collected litres until disposal is reconciled', async () => {
+    const { store } = await fixture(false);
+    await mount(store, '/dispatch', DispatchView);
+    const truck = () => Array.from(document.querySelectorAll('.run')).find((element) => element.querySelector('.run-name')?.textContent?.includes('T03'))!;
+    expect(truck().querySelector('.run-load > .mono')?.textContent).toBe('2,300 L');
+    expect(truck().querySelector('.run-status')?.textContent).toContain('awaiting disposal');
+    expect(truck().querySelector('.run-status')?.textContent).toContain('no open load');
+    expect(truck().querySelector<HTMLElement>('.meter span')!.style.width).toBe('38%');
+    await act(async () => {
+      await store.dispatch({ type: 'acceptDifference', loadId: 'L103', reason: 'Demo meter variance' });
+      await store.dispatch({ type: 'reconcile', loadId: 'L103' });
+    });
+    expect(truck().querySelector('.run-load > .mono')?.textContent).toBe('0 L');
+    expect(truck().querySelector('.run-status')?.textContent).toBe('No open load');
+    expect(truck().textContent).toContain('New load');
+  });
+});

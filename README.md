@@ -33,7 +33,7 @@ React 19, TypeScript, Vite, React Router (data router, for URL state and unsaved
 ## Fixture and workflow assumptions
 
 - **Demo date** is fixed at Fri 2 Oct 2026. New activity timestamps use that date plus the real Auckland time of day (NZDT, +13:00).
-- **Loads** carry one waste type. Each job contributes to at most one load. Only a truck's `collecting` load counts toward capacity. Historical L104 is excluded.
+- **Loads** carry one waste type. Each job contributes to at most one load. Only a truck's `collecting` load counts toward capacity. Historical L104 is excluded. The truck-run meter also displays an awaiting-disposal load's collected litres until reconciliation, so a pending load is not shown as an empty truck.
 - **Assignment capacity** is the open load's actual litres plus the estimates of the truck's assigned and in-progress jobs.
 - **Collection capacity** checks actual litres against capacity minus the open load's total.
 - **Starting a job** needs an open (`collecting`) load. T03 starts without one because L103 is awaiting disposal. Office (or the Dispatch truck rail) can start a **New load** once L103 is reconciled.
@@ -68,9 +68,11 @@ Rates are stored in 1/10,000 NZD and amounts in integer cents, rounded half up. 
 
 ## Readiness verification (2 Oct 2026)
 
-**Current branch: `npm test`, 42/42 passed. `npm run build` (TypeScript + production build), passed on Node 24.19.0.** The original 21 domain/persistence checks remain, plus regressions covering:
+**Current branch: `npm test`, 44/44 passed. `npm run build` (TypeScript + production build), passed on Node 24.19.0.** The original 21 domain/persistence checks remain, plus regressions covering:
 
 - HTTP preview readiness with coloured/chunked logs, startup errors, non-success responses and timeouts
+- URL-driven search and clearing filters after asynchronous navigation
+- truck run cards retaining collected litres for loads awaiting disposal, then clearing after reconciliation
 - separate store instances writing concurrently to one database without losing unrelated changes
 - cross-tab idempotency, stale command validation and asynchronous incompatible-truck errors
 - collection photo evidence removed by another tab
@@ -83,7 +85,7 @@ Rates are stored in 1/10,000 NZD and amounts in integer cents, rounded half up. 
 - normalized invoice rate/tax/description saves clearing the unsaved flag
 - failed invoice saves and newer typing during an earlier save
 
-Component regressions use jsdom, not a real rendering engine. Local socket restrictions prevent a Chromium run in the editing environment. GitHub Actions runs clean install, tests, build and all 82 Chromium acceptance checks on pushes and pull requests, without secrets or deployment. Check the current commit’s CI result before calling it browser-verified.
+Component regressions use jsdom, not a real rendering engine. Local socket restrictions prevent a Chromium run in the editing environment. GitHub Actions runs clean install, tests, build and all 87 Chromium acceptance checks on pushes and pull requests, without secrets or deployment. Check the current commit’s CI result before calling it browser-verified.
 
 ### Historical baseline browser report (original prototype, before these fixes)
 

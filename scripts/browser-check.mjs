@@ -10,6 +10,17 @@ const BASE = `http://localhost:${PORT}`;
 const SHOTS = 'screenshots';
 mkdirSync(SHOTS, { recursive: true });
 
+// Capture settled UI rather than an intermediate drawer transition.
+const screenshot = async (page, options) => {
+  await page.evaluate(async () => {
+    await document.fonts.ready;
+    await Promise.all(document.getAnimations()
+      .filter((animation) => animation.effect?.getTiming().iterations !== Infinity)
+      .map((animation) => animation.finished.catch(() => {})));
+  });
+  await page.screenshot(options);
+};
+
 let server;
 let browser;
 
@@ -43,15 +54,16 @@ try {
   await page.goto(`${BASE}/dispatch`);
   await page.getByRole('heading', { name: "Today's collections" }).waitFor();
   check('Dispatch summary counts', (await page.locator('.summary-line').innerText()).replace(/\s+/g, ' ').includes('8 jobs · 2 unassigned · 1 blocked'));
+  check('Awaiting-disposal truck retains its 2,300 L summary', (await page.locator('.run', { hasText: 'T03' }).locator('.run-load').innerText()).includes('2,300 L'));
   check('Fonts render macrons (Ōtāhuhu/Whangārei)', await page.evaluate(async () => {
     await document.fonts.ready;
     return document.fonts.check('14px "IBM Plex Sans"', 'Ōtāhuhu Whangārei');
   }));
-  await page.screenshot({ path: `${SHOTS}/dispatch-1440.png` });
+  await screenshot(page, { path: `${SHOTS}/dispatch-1440.png` });
 
   // Filters
   await page.getByPlaceholder('Search job, customer or site').fill('Ridge');
-  check('Search filters rows', (await page.locator('.jobs-table tbody tr').count()) === 1);
+  check('Search filters rows', await until(async () => (await page.locator('.jobs-table tbody tr').count()) === 1));
   await page.getByRole('button', { name: 'Clear filters' }).first().click();
   check('Clear filters restores eight jobs', await until(async () => (await page.locator('.jobs-table tbody tr').count()) === 8));
 
@@ -61,7 +73,7 @@ try {
   await page.getByRole('dialog').getByRole('button', { name: 'Assign', exact: true }).click();
   check('Septic job rejected on grease truck', await until(() => page.getByRole('alert').filter({ hasText: 'grease waste only' }).isVisible()));
   await page.keyboard.press('Escape');
-  check('Escape closes dialog', (await page.getByRole('dialog').count()) === 0);
+  check('Escape closes dialog', await until(async () => (await page.getByRole('dialog').count()) === 0));
   check('Focus returns to opener after Escape', await until(() => page.evaluate(() => document.activeElement?.getAttribute('aria-label') === 'Assign J108')));
 
   // Keyboard assign J101 → T01
@@ -87,13 +99,13 @@ try {
   check('Empty litres + no photo shows error summary', (await page.getByRole('alert').first().innerText()).includes('Check the highlighted fields'));
   await page.getByLabel('Actual litres collected').fill('-5');
   await page.getByRole('button', { name: 'Review collection' }).click();
-  check('Negative litres rejected', await page.locator('.field-error', { hasText: 'Enter a positive whole number of litres.' }).isVisible());
+  check('Negative litres rejected', await until(() => page.locator('.field-error', { hasText: 'Enter a positive whole number of litres.' }).isVisible()));
 
   const fileInput = page.locator('input[type=file]');
   await fileInput.setInputFiles({ name: 'clip.gif', mimeType: 'image/gif', buffer: Buffer.from('GIF89a') });
-  check('Invalid image type rejected', await page.getByText('clip.gif is not a JPEG, PNG or WebP image.').isVisible());
+  check('Invalid image type rejected', await until(() => page.getByText('clip.gif is not a JPEG, PNG or WebP image.').isVisible()));
   await fileInput.setInputFiles({ name: 'huge.png', mimeType: 'image/png', buffer: Buffer.alloc(5 * 1024 * 1024 + 10) });
-  check('Oversize image rejected', await page.getByText('huge.png is larger than 5 MB.').isVisible());
+  check('Oversize image rejected', await until(() => page.getByText('huge.png is larger than 5 MB.').isVisible()));
   check('Litre input kept after photo errors', (await page.getByLabel('Actual litres collected').inputValue()) === '-5');
 
   const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
@@ -105,8 +117,8 @@ try {
   await page.reload();
   await page.getByLabel('Actual litres collected').waitFor();
   check('Draft litres survive refresh', (await page.getByLabel('Actual litres collected').inputValue()) === '650');
-  check('Uploaded photo blob survives refresh', await page.locator('.photo-item img[alt*="trap.png"]').evaluate((img) => img.complete && img.naturalWidth > 0).catch(() => false));
-  await page.screenshot({ path: `${SHOTS}/driver-form-1440.png` });
+  check('Uploaded photo blob survives refresh', await until(() => page.locator('.photo-item img[alt*="trap.png"]').evaluateAll((images) => images.some((img) => img.complete && img.naturalWidth > 0))));
+  await screenshot(page, { path: `${SHOTS}/driver-form-1440.png` });
 
   await page.getByRole('button', { name: 'Review collection' }).click();
   const confirmBtn = page.getByRole('button', { name: 'Confirm collection' });
@@ -133,13 +145,12 @@ try {
   await page.getByRole('heading', { name: /Draft invoice D101/ }).waitFor();
   const totalText = await page.locator('.invoice-totals .grand dd').innerText();
   check('J101 draft totals NZ$296.70', totalText.includes('296.70'), totalText);
-  await page.screenshot({ path: `${SHOTS}/office-invoice-1440.png` });
+  await screenshot(page, { path: `${SHOTS}/office-invoice-1440.png` });
   await page.reload();
   await page.goBack().catch(() => {});
   await page.goto(`${BASE}/office?tab=drafts`);
-  const draftRows = await page.locator('.queue-row', { hasText: 'D101' }).count();
-  check('Exactly one D101 draft after double-click, refresh, back', draftRows === 1);
-  check('D107 remains single', (await page.locator('.queue-row', { hasText: 'D107' }).count()) === 1);
+  check('Exactly one D101 draft after double-click, refresh, back', await until(async () => (await page.locator('.queue-row', { hasText: 'D101' }).count()) === 1));
+  check('D107 remains single', await until(async () => (await page.locator('.queue-row', { hasText: 'D107' }).count()) === 1));
 
   // Edit illustrative GST
   await page.locator('.queue-row', { hasText: 'D101' }).click();
@@ -160,11 +171,11 @@ try {
   const totals = await page.locator('.totals').innerText();
   check('L103 shows 2,300 L vs 2,200 L', totals.includes('2,300 L') && totals.includes('2,200 L') && totals.includes('100 L'));
   check('L103 reconcile blocked until discrepancy resolved', await page.getByRole('button', { name: 'Reconcile load' }).isDisabled());
-  await page.screenshot({ path: `${SHOTS}/office-discrepancy-1440.png` });
+  await screenshot(page, { path: `${SHOTS}/office-discrepancy-1440.png` });
   await page.goto(`${BASE}/dispatch?job=J106`);
   check('Blocked visit shows no litres and is not billable', (await page.getByRole('dialog').innerText()).includes('Visit blocked: nothing was collected'));
   await page.keyboard.press('Escape');
-  check('Escape closes job drawer and clears URL', !page.url().includes('job='));
+  check('Escape closes job drawer and clears URL', await until(() => !page.url().includes('job=')));
 
   // Reset: cancel then confirm
   await page.getByRole('button', { name: 'Demo controls' }).first().click();
@@ -208,16 +219,28 @@ try {
           .map((el) => el.textContent?.trim() || el.getAttribute('aria-label')));
         check(`Touch targets ≥44px at ${w} ${r}`, small.length === 0, small.join(', '));
       }
+      if (r.includes('invoice=')) {
+        const clippedValues = await p.locator('.rate-input input').evaluateAll((inputs) => {
+          const context = document.createElement('canvas').getContext('2d');
+          return inputs.filter((input) => {
+            const style = getComputedStyle(input);
+            context.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+            const available = input.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+            return context.measureText(input.value).width > available + 1;
+          }).map((input) => input.id);
+        });
+        check(`Invoice rate values fully visible at ${w}`, clippedValues.length === 0, clippedValues.join(', '));
+      }
       const name = r.replace(/[/?=&]+/g, '-').replace(/^-/, '');
-      if (w !== 360) await p.screenshot({ path: `${SHOTS}/${name}-${w}.png`, fullPage: r === '/driver?driver=D01' });
+      if (w !== 360) await screenshot(p, { path: `${SHOTS}/${name}-${w}.png`, fullPage: r === '/driver?driver=D01' || r.includes('invoice=') });
     }
     if (w === 1024) {
       await p.goto(`${BASE}/dispatch`);
       await p.getByRole('button', { name: 'Truck runs' }).click();
-      check('Truck runs drawer opens at 1024', await p.getByRole('dialog', { name: 'Truck runs' }).isVisible());
+      check('Truck runs drawer opens at 1024', await until(() => p.getByRole('dialog', { name: 'Truck runs' }).isVisible()));
       await p.getByRole('button', { name: /T03/ }).click();
       await p.waitForTimeout(300);
-      await p.screenshot({ path: `${SHOTS}/dispatch-runs-drawer-1024.png` });
+      await screenshot(p, { path: `${SHOTS}/dispatch-runs-drawer-1024.png` });
     }
     await c.close();
   }
@@ -236,10 +259,10 @@ try {
   await mp.getByLabel('Actual litres collected').fill('650');
   await mp.getByRole('button', { name: 'Add built-in sample photo' }).tap();
   await mp.locator('.photo-item').first().waitFor();
-  await mp.screenshot({ path: `${SHOTS}/driver-form-390.png` });
+  await screenshot(mp, { path: `${SHOTS}/driver-form-390.png` });
   await mp.getByRole('button', { name: 'Review collection' }).tap();
   await mp.getByRole('button', { name: 'Confirm collection' }).waitFor();
-  await mp.screenshot({ path: `${SHOTS}/driver-review-390.png` });
+  await screenshot(mp, { path: `${SHOTS}/driver-review-390.png` });
   await mp.getByRole('button', { name: 'Confirm collection' }).tap();
   await mp.getByText('Collection confirmed. No further driver action.').waitFor();
   check('Mobile driver flow completes at 390', true);
