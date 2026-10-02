@@ -167,7 +167,9 @@ function TruckRow({ truck, state, expanded, onToggle }: { truck: Truck; state: D
   const { open } = useJobParam();
   const load = collectingLoad(state, truck.id);
   const pendingLoad = truckLoads(state, truck.id).find((l) => l.status === 'awaiting_disposal');
-  const collected = load ? loadTotal(load) : 0;
+  // A load awaiting disposal is still unreconciled; do not present the truck as empty.
+  const displayedLoad = load ?? pendingLoad;
+  const collected = displayedLoad ? loadTotal(displayedLoad) : 0;
   const pct = Math.min(100, Math.round((collected / truck.capacityLitres) * 100));
   const Chevron = expanded ? ChevronDown : ChevronRight;
   const listId = `stops-${truck.id}`;

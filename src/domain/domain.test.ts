@@ -23,14 +23,16 @@ function memoryStorage(): StorageAdapter & { fail: boolean; saved?: DemoState } 
     fail: false,
     saved: undefined as DemoState | undefined,
     async load() { return m.saved && structuredClone(m.saved); },
-    async commit(state: DemoState, put: { id: string; blob: Blob }[], del: string[]) {
+    async commit(update: Parameters<StorageAdapter['commit']>[0]) {
       if (m.fail) throw new Error('quota');
-      m.saved = structuredClone(state);
-      put.forEach((b) => blobs.set(b.id, b.blob));
-      del.forEach((id) => blobs.delete(id));
+      const change = update(m.saved && structuredClone(m.saved));
+      m.saved = structuredClone(change.state);
+      if (change.clearBlobs) blobs.clear();
+      change.putBlobs?.forEach((b) => blobs.set(b.id, b.blob));
+      change.deleteBlobs?.forEach((id) => blobs.delete(id));
+      return change.state;
     },
     async getBlob(id: string) { return blobs.get(id); },
-    async clear() { m.saved = undefined; blobs.clear(); },
   };
   return m;
 }
