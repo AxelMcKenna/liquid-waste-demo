@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" role="img" aria-label="Sample illustration: grease trap before pumping">
+  <rect width="240" height="240" fill="#EDF1E8"/>
+  <rect x="30" y="60" width="180" height="140" rx="8" fill="#FFFFFF" stroke="#59675F" stroke-width="3"/>
+  <rect x="33" y="96" width="174" height="101" fill="#C9B98A"/>
+  <path d="M33 96 q20 -8 40 0 t40 0 t40 0 t54 0" fill="none" stroke="#825000" stroke-width="3"/>
+  <rect x="33" y="96" width="174" height="22" fill="#A99358" opacity=".8"/>
+  <rect x="96" y="40" width="48" height="20" rx="3" fill="#182B25"/>
+  <text x="120" y="226" font-family="Arial, sans-serif" font-size="14" text-anchor="middle" fill="#182B25">SAMPLE · BEFORE · FICTIONAL</text>
+</svg>
